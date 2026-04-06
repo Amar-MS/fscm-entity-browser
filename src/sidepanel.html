@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>F&SCM Entity Browser</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Top bar ── -->
+    <div class="topbar">
+      <div class="topbar-brand">
+        <span class="logo">&#9783;</span>
+        <span class="brand-name">F&amp;SCM Entity Browser</span>
+      </div>
+      <div class="topbar-search">
+        <input type="text" id="searchInput" placeholder="Search entities&hellip;" autocomplete="off" spellcheck="false">
+        <button class="topbar-icon-btn hidden" id="clearSearch" title="Clear">&#10005;</button>
+      </div>
+      <div class="topbar-actions">
+        <button class="topbar-icon-btn" id="refreshEntities" title="Refresh entity list">&#8635;</button>
+        <button class="env-btn" id="envBadge" title="Switch environment">F&amp;SCM &#9660;</button>
+      </div>
+    </div>
+
+    <!-- ── Environment picker ── -->
+    <div class="env-picker hidden" id="envPicker">
+      <div class="env-picker-title">Select Environment</div>
+      <div class="env-picker-list" id="envPickerList"></div>
+      <div class="env-picker-divider"></div>
+      <div class="env-picker-custom">
+        <input type="text" id="envCustomUrl" placeholder="https://myenv.operations.dynamics.com" spellcheck="false">
+        <button class="primary-btn" id="envCustomConnect">Connect</button>
+      </div>
+    </div>
+
+    <!-- ── Two-column layout ── -->
+    <div class="layout">
+
+      <!-- Left sidebar: entity list -->
+      <div class="sidebar">
+        <div class="sidebar-meta" id="sidebarMeta"></div>
+        <div class="alias-hint hidden" id="aliasHint"></div>
+        <div class="entity-list" id="entityList"></div>
+        <div id="loadMoreContainer"></div>
+      </div>
+
+      <!-- Right: detail pane (schema + data) -->
+      <div class="detail-pane" id="detailPane">
+        <div class="welcome-state">
+          <div class="welcome-icon">&#9783;</div>
+          <div class="welcome-title">F&amp;SCM Entity Browser</div>
+          <div class="welcome-sub">Select an entity from the list on the left to view its fields and data</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Loading overlay ── -->
+    <div class="status-overlay hidden" id="statusOverlay">
+      <div class="spinner"></div>
+      <div class="status-msg" id="statusMessage">Loading&hellip;</div>
+    </div>
+
+    <!-- ── Error bar ── -->
+    <div class="error-bar hidden" id="errorBar">
+      <span id="errorText"></span>
+      <button class="close-btn" id="closeError">&#10005;</button>
+    </div>
+
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
