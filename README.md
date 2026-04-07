@@ -28,7 +28,7 @@ A Microsoft Edge browser extension for browsing, inspecting, and querying data e
 1. **Download** this repository — click **Code → Download ZIP** and extract it
 2. Open **Microsoft Edge** and go to `edge://extensions`
 3. Enable **Developer mode** (toggle in the top-right corner)
-4. Click **Load unpacked** → select the extracted `fscm-entity-browser` folder
+4. Click **Load unpacked** → select the extracted `fscm-table-browser` folder
 5. The extension icon will appear in your toolbar
 
 ---
