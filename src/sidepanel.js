@@ -29,6 +29,8 @@ const App = {
   filterMode:          'compatible',
   filterRowSeq:        0,
   lastFallbackInfo:    null,
+  nsAnalyzerTier:      'medium',
+  nsSequences:         null,
 };
 
 const CACHE_KEY_PREFIX = 'entityList_';
@@ -119,6 +121,8 @@ function bindStaticEvents() {
   document.getElementById('closeError').addEventListener('click', () => {
     document.getElementById('errorBar').classList.add('hidden');
   });
+
+  document.getElementById('nsAnalyzerBtn').addEventListener('click', showNsAnalyzer);
 }
 
 // ── Environment Picker ─────────────────────────────────────
@@ -218,6 +222,7 @@ async function switchEnvironment(tabId, baseUrl) {
   App._schemaTypeMap = null;
   App.lastQueryData  = null;
   App.displayCount   = 100;
+  App.nsSequences    = null;
 
   if (!App.tabId) {
     try {
@@ -2007,5 +2012,482 @@ function csvEsc(val) {
     return `"${val.replace(/"/g, '""')}"`;
   }
   return val;
+}
+
+// ── Number Sequence Health Analyzer ───────────────────────────────────────
+
+const NS_TIERS = [
+  { id: 'low',      label: 'Low',       desc: '~1K / mo',   txPerMonth:     1_000 },
+  { id: 'medium',   label: 'Medium',    desc: '~10K / mo',  txPerMonth:    10_000 },
+  { id: 'high',     label: 'High',      desc: '~100K / mo', txPerMonth:   100_000 },
+  { id: 'veryhigh', label: 'Very High', desc: '~1M / mo',   txPerMonth: 1_000_000 },
+];
+
+function showNsAnalyzer() {
+  App.selectedEntity = null;
+  App.activeView     = 'ns-analyzer';
+  document.querySelectorAll('.entity-item').forEach(el => el.classList.remove('active'));
+
+  const pane = document.getElementById('detailPane');
+  pane.innerHTML = buildNsAnalyzerShell();
+  bindNsAnalyzerEvents();
+  runNsScan();
+}
+
+function buildNsAnalyzerShell() {
+  const activeTier = App.nsAnalyzerTier || 'medium';
+  return `
+    <div class="ns-analyzer-panel">
+      <div class="ns-header">
+        <div class="ns-header-info">
+          <span class="ns-header-title">&#9889; Number Sequence Health Analyzer</span>
+          <span class="ns-header-sub">Scans all number sequences for suboptimal preallocation and exhaustion risk</span>
+        </div>
+        <button class="secondary-btn" id="nsRescanBtn">&#8635; Re-scan</button>
+      </div>
+      <div class="ns-tier-section">
+        <div class="ns-tier-label">System volume &mdash; estimated transactions per number sequence per month:</div>
+        <div class="ns-tier-picker">
+          ${NS_TIERS.map(t => `
+            <button class="ns-tier-btn${t.id === activeTier ? ' active' : ''}" data-tier="${t.id}">
+              ${escHtml(t.label)}<span class="ns-tier-desc">${escHtml(t.desc)}</span>
+            </button>`).join('')}
+        </div>
+        <div class="ns-tier-hint">Higher volume = larger recommended batch size. Recommendations update instantly when you switch tier.</div>
+      </div>
+      <div class="ns-scan-summary" id="nsScanSummary"></div>
+      <div class="ns-body" id="nsBody">
+        <div class="loading-inline">Connecting&#8230;</div>
+      </div>
+    </div>`;
+}
+
+function bindNsAnalyzerEvents() {
+  document.getElementById('nsRescanBtn')?.addEventListener('click', () => {
+    App.nsSequences = null;
+    runNsScan();
+  });
+  document.querySelectorAll('.ns-tier-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      App.nsAnalyzerTier = btn.dataset.tier;
+      document.querySelectorAll('.ns-tier-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (App.nsSequences) renderNsHealthTable(App.nsSequences);
+      else runNsScan();
+    });
+  });
+}
+
+async function runNsScan() {
+  const body    = document.getElementById('nsBody');
+  const summary = document.getElementById('nsScanSummary');
+  if (!body) return;
+
+  body.innerHTML = '<div class="loading-inline">Scanning number sequences&#8230;</div>';
+  if (summary) summary.innerHTML = '';
+
+  try {
+    if (!App.nsSequences) App.nsSequences = await loadNsData();
+    renderNsHealthTable(App.nsSequences);
+  } catch (e) {
+    body.innerHTML = `
+      <div class="error-inline">
+        <strong>Could not load number sequences.</strong><br>${escHtml(e.message)}<br><br>
+        <small>Tip: search <strong>NumberSequence</strong> in the entity list on the left to find the correct entity name in your environment, then report it so we can add it to the probe list.</small>
+      </div>`;
+    if (summary) summary.innerHTML = '';
+  }
+}
+
+async function loadNsData() {
+  // D365 F&SCM environments expose the number sequence entity under different names
+  // depending on version and configuration. Try candidates in priority order.
+  const candidates = [
+    'SequenceV2Tables',           // confirmed working
+    'NumberSequences',
+    'NumberSequenceEntities',
+    'NumberSequenceTableEntities',
+    'NumberSequenceV2s',
+    'NumberSequenceCurrentLists',
+    'NumberSequenceGroupEntities',
+    'NumberSequenceListEntities',
+    'NumberSequenceSetupEntities',
+    'NumberSequenceConfigEntities',
+    'NumberSequenceDetails',
+    'NumberSequenceReferenceEntities',
+    'NumberSequenceDataEntities',
+    'NumberSequenceScopes',
+  ];
+
+  // Desired fields — we normalise whatever we get after the fetch
+  const desiredFields = [
+    'NumberSequenceCode', 'Name', 'Txt', 'Continuous', 'PreAllocationQuantity',
+    'Lowest', 'Highest', 'Next', 'Status', 'ScopeType', 'DataAreaId', 'LegalEntityId',
+  ];
+
+  let lastError = null;
+  for (const entity of candidates) {
+    try {
+      // No $select — field names vary by environment/version; get all fields and normalise
+      const result = await apiCall(`/data/${entity}?cross-company=true&$top=2000`);
+      if (result.type !== 'json' || !Array.isArray(result.data?.value)) continue;
+      if (result.data.value.length === 0) continue;
+      return result.data.value.map(r => normaliseNsRow(r));
+    } catch (e) {
+      lastError = e;
+      continue;
+    }
+  }
+
+  // Nothing worked — fall back to scanning the entity list for NS-like entities
+  // Pick the entity with the most fields — most likely to be the full config entity
+  const nsCandidates = App.entityList.filter(n =>
+    n.toLowerCase().includes('numbersequence')
+  );
+
+  let bestEntity = null, bestRows = null, bestFieldCount = 0;
+  for (const entity of nsCandidates) {
+    if (candidates.includes(entity)) continue;
+    try {
+      const result = await apiCall(`/data/${entity}?cross-company=true&$top=10`);
+      if (result.type !== 'json' || !Array.isArray(result.data?.value) || result.data.value.length === 0) continue;
+      const fieldCount = Object.keys(result.data.value[0]).length;
+      if (fieldCount > bestFieldCount) {
+        bestFieldCount = fieldCount;
+        bestEntity = entity;
+        bestRows = result.data.value;
+      }
+    } catch (_) { continue; }
+  }
+
+  if (bestEntity) {
+    try {
+      const full = await apiCall(`/data/${bestEntity}?cross-company=true&$top=2000`);
+      if (full.type === 'json' && Array.isArray(full.data?.value)) bestRows = full.data.value;
+    } catch (_) {}
+    return bestRows.map(r => normaliseNsRow(r));
+  }
+
+  throw lastError || new Error('No NumberSequence OData entity found in this environment. Search "NumberSequence" in the entity list to find the correct name.');
+}
+
+function normaliseNsRow(r) {
+  // Find a field whose name contains any of the given substrings (case-insensitive)
+  const findVal = (...substrings) => {
+    for (const sub of substrings) {
+      const match = Object.keys(r).find(rk => rk.toLowerCase().includes(sub.toLowerCase()));
+      if (match !== undefined && r[match] !== undefined) return r[match];
+    }
+    return null;
+  };
+  return {
+    NumberSequenceCode:    findVal('NumberSequenceCode', 'NumberSequence', 'SequenceCode', 'Code', 'NumberSeq'),
+    Name:                  findVal('Name', 'Txt', 'Description', 'NumberSequenceName'),
+    Continuous:            findVal('Continuous', 'IsContinuous', 'ContinuousNumbers', 'ContinuousNumber'),
+    PreAllocationEnabled:  findVal('Preallocation', 'PreallocationEnabled', 'IsPreallocationEnabled', 'PreallocEnabled', 'EnablePreallocation', 'FetchAhead', 'IsFetchAhead'),
+    PreAllocationQuantity: findVal('FetchAheadQty', 'QuantityOfNumbers', 'PreAlloc', 'Prealloc', 'NumberOfNumbers', 'QuantityOfNum', 'BatchSize', 'AllocQty', 'AllocatedQty', 'Allocation', 'QuantityNum'),
+    Lowest:                findVal('Lowest', 'Smallest', 'LowestNumber', 'MinValue', 'FromNum'),
+    Highest:               findVal('Highest', 'Largest', 'HighestNumber', 'MaxValue', 'ToNum'),
+    Next:                  findVal('Next', 'NextNumber', 'NextValue', 'CurrValue', 'CurrentNumber'),
+    Status:                findVal('Status', 'SequenceStatus', 'Stopped', 'InUse'),
+    ScopeType:             findVal('ScopeType', 'Scope', 'ScopeId'),
+    DataAreaId:            findVal('DataAreaId', 'LegalEntityId', 'Company', 'CompanyId', 'DataArea', 'LegalEntity'),
+  };
+}
+
+function _logNsRawFields(_rawRows) {} // debug helper removed
+
+function getNsActiveTierVolume() {
+  const tier = NS_TIERS.find(t => t.id === (App.nsAnalyzerTier || 'medium'));
+  return tier ? tier.txPerMonth : 10_000;
+}
+
+function getNsRecommendation(seq, tierVolume) {
+  const continuous = seq.Continuous === true || seq.Continuous === 1 ||
+                     String(seq.Continuous).toLowerCase() === 'yes';
+  const preAllocEnabled = seq.PreAllocationEnabled === true || seq.PreAllocationEnabled === 1 ||
+                          String(seq.PreAllocationEnabled).toLowerCase() === 'yes' ||
+                          seq.PreAllocationEnabled === null; // null = unknown, don't penalise
+  const rawQty  = parseInt(seq.PreAllocationQuantity);
+  const prealloc = (!isNaN(rawQty) && preAllocEnabled !== false) ? rawQty : 0;
+  const lowest     = parseFloat(seq.Lowest)  || 0;
+  const highest    = parseFloat(seq.Highest) || 0;
+  const next       = parseFloat(seq.Next != null ? seq.Next : lowest);
+
+  const range     = Math.max(0, highest - lowest);
+  const consumed  = range > 0 ? Math.min(1, (next - lowest) / range) : 0;
+  const remaining = Math.max(0, highest - next);
+
+  // Suggest prealloc covering ~10 min of peak volume at selected tier
+  const per10min          = Math.max(1, (tierVolume / (30 * 24 * 60)) * 10);
+  const suggestedPrealloc = Math.max(continuous ? 10 : 5, Math.min(100, Math.ceil(per10min)));
+
+  let severity = 'ok';
+  const issues      = [];
+  const suggestions = [];
+
+  // ── Preallocation checks ──
+  if (continuous && prealloc === 0) {
+    severity = 'critical';
+    issues.push('Continuous sequence with PreAllocationQuantity = 0. Every allocation acquires a table lock \u2014 severe bottleneck at any volume.');
+    suggestions.push(`Set PreAllocationQuantity to ${suggestedPrealloc} to batch allocations and reduce lock contention.`);
+  } else if (prealloc === 0) {
+    severity = 'warning';
+    issues.push('No preallocation configured. Every allocation requires a database round-trip.');
+    suggestions.push(`Set PreAllocationQuantity to at least ${suggestedPrealloc} for this volume tier.`);
+  } else if (prealloc < suggestedPrealloc) {
+    if (severity === 'ok') severity = continuous ? 'warning' : 'caution';
+    issues.push(`PreAllocationQuantity (${prealloc}) is below recommended (${suggestedPrealloc}) for the selected volume tier.`);
+    suggestions.push(`Consider increasing PreAllocationQuantity to ${suggestedPrealloc}.`);
+  }
+
+  // ── Exhaustion checks ──
+  if (consumed > 0.95) {
+    if (severity !== 'critical') severity = 'critical';
+    issues.push(`Sequence is ${(consumed * 100).toFixed(1)}% consumed \u2014 only ${remaining.toLocaleString()} numbers remaining.`);
+    suggestions.push('Extend the Highest value immediately or risk allocation failures.');
+  } else if (consumed > 0.80) {
+    if (severity === 'ok') severity = 'caution';
+    issues.push(`Sequence is ${(consumed * 100).toFixed(1)}% consumed (${remaining.toLocaleString()} remaining).`);
+    suggestions.push('Plan to extend the Highest value before it exhausts.');
+  }
+
+  // ── Time to exhaustion at tier volume ──
+  let timeToExhaust = null;
+  if (tierVolume > 0 && remaining > 0) {
+    const monthsLeft = remaining / tierVolume;
+    timeToExhaust = monthsLeft < (1 / 30) ? '< 1 day'
+                  : monthsLeft < 1        ? `~${Math.round(monthsLeft * 30)} days`
+                  : monthsLeft < 24       ? `~${monthsLeft.toFixed(1)} months`
+                  : `> ${Math.floor(monthsLeft / 12)} years`;
+  }
+
+  return { severity, issues, suggestions, consumed, remaining, suggestedPrealloc, timeToExhaust, continuous, prealloc };
+}
+
+function renderNsHealthTable(sequences) {
+  const body    = document.getElementById('nsBody');
+  const summary = document.getElementById('nsScanSummary');
+  if (!body) return;
+
+  const tierVolume = getNsActiveTierVolume();
+  const analyzed   = sequences.map(seq => ({ seq, rec: getNsRecommendation(seq, tierVolume) }));
+  const sevOrder   = { critical: 0, warning: 1, caution: 2, ok: 3 };
+  analyzed.sort((a, b) =>
+    (sevOrder[a.rec.severity] - sevOrder[b.rec.severity]) ||
+    String(a.seq.NumberSequenceCode || '').localeCompare(String(b.seq.NumberSequenceCode || ''))
+  );
+
+  const counts = { critical: 0, warning: 0, caution: 0, ok: 0 };
+  analyzed.forEach(({ rec }) => counts[rec.severity]++);
+
+  if (summary) {
+    summary.innerHTML = `
+      <span class="ns-scan-count">${analyzed.length} sequences scanned</span>
+      ${counts.critical > 0 ? `<span class="ns-summary-chip critical">&#9888; ${counts.critical} Critical</span>` : ''}
+      ${counts.warning  > 0 ? `<span class="ns-summary-chip warning">&#9651; ${counts.warning} Warning</span>`  : ''}
+      ${counts.caution  > 0 ? `<span class="ns-summary-chip caution">&#9711; ${counts.caution} Caution</span>`  : ''}
+      <span class="ns-summary-chip ok">&#10003; ${counts.ok} OK</span>`;
+  }
+
+  if (analyzed.length === 0) {
+    body.innerHTML = '<div class="empty-state">No number sequences found in this environment.</div>';
+    return;
+  }
+
+  // Unique companies for dropdown
+  const companies = [...new Set(analyzed.map(a => a.seq.DataAreaId || '').filter(Boolean))].sort();
+
+  body.innerHTML = `
+    <div class="ns-filter-bar">
+      <input type="text" id="nsSearch" class="ns-search-input" placeholder="Search code or name&hellip;" spellcheck="false">
+      <select id="nsSevFilter" class="ns-filter-select">
+        <option value="">All severities</option>
+        <option value="critical">&#9888; Critical</option>
+        <option value="warning">&#9651; Warning</option>
+        <option value="caution">&#9711; Caution</option>
+        <option value="ok">&#10003; OK</option>
+      </select>
+      <select id="nsCoFilter" class="ns-filter-select">
+        <option value="">All companies</option>
+        ${companies.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')}
+      </select>
+      <span class="ns-filter-count" id="nsFilterCount"></span>
+    </div>
+    <div class="ns-table-wrap" id="nsTableWrap"></div>`;
+
+  function applyFilters() {
+    const search = document.getElementById('nsSearch')?.value.trim().toLowerCase() || '';
+    const sev    = document.getElementById('nsSevFilter')?.value || '';
+    const co     = document.getElementById('nsCoFilter')?.value || '';
+
+    const filtered = analyzed.filter(({ seq, rec }) => {
+      if (sev && rec.severity !== sev) return false;
+      if (co  && (seq.DataAreaId || '') !== co) return false;
+      if (search) {
+        const code = String(seq.NumberSequenceCode || '').toLowerCase();
+        const name = String(seq.Name || '').toLowerCase();
+        if (!code.includes(search) && !name.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const countEl = document.getElementById('nsFilterCount');
+    if (countEl) {
+      countEl.textContent = (search || sev || co)
+        ? `${filtered.length} of ${analyzed.length} shown`
+        : '';
+    }
+
+    renderNsTable(filtered);
+  }
+
+  document.getElementById('nsSearch')?.addEventListener('input', applyFilters);
+  document.getElementById('nsSevFilter')?.addEventListener('change', applyFilters);
+  document.getElementById('nsCoFilter')?.addEventListener('change', applyFilters);
+
+  function renderNsTable(rows) {
+    const wrap = document.getElementById('nsTableWrap');
+    if (!wrap) return;
+
+    if (rows.length === 0) {
+      wrap.innerHTML = '<div class="empty-state">No sequences match the current filters.</div>';
+      return;
+    }
+
+    const tableRows = rows.map(({ seq, rec }, idx) => {
+      const code    = escHtml(seq.NumberSequenceCode || '\u2014');
+      const name    = escHtml(seq.Name || '');
+      const co      = escHtml(seq.DataAreaId || '');
+      const pct     = (rec.consumed * 100).toFixed(1);
+      const progCls = rec.consumed > 0.95 ? 'critical'
+                    : rec.consumed > 0.80 ? 'warning'
+                    : rec.consumed > 0.60 ? 'caution' : 'ok';
+      // store original index into analyzed for drilldown
+      const origIdx = analyzed.indexOf(rows[idx]);
+
+      return `
+        <tr class="ns-data-row ns-row-${rec.severity}" data-orig-idx="${origIdx}">
+          <td>
+            <span class="field-name">${code}</span>
+            ${name ? `<div class="ns-code-name">${name}</div>` : ''}
+          </td>
+          <td>${rec.continuous
+            ? `<span class="ns-badge ns-badge-${rec.prealloc === 0 ? 'critical' : 'warning'}">Continuous</span>`
+            : `<span class="ns-type-noncont">Non-cont.</span>`}</td>
+          <td class="ns-prealloc-cell">
+            <strong>${rec.prealloc}</strong>
+            ${rec.prealloc < rec.suggestedPrealloc
+              ? `<span class="ns-prealloc-arrow">\u2192 ${rec.suggestedPrealloc}</span>`
+              : `<span class="ns-prealloc-ok">\u2713</span>`}
+          </td>
+          <td>
+            <div class="ns-progress-wrap">
+              <div class="ns-progress-bar">
+                <div class="ns-progress-fill ${progCls}" style="width:${Math.min(100, rec.consumed * 100).toFixed(1)}%"></div>
+              </div>
+              <span class="ns-pct-label">${pct}%</span>
+            </div>
+          </td>
+          <td class="ns-num-cell">${rec.remaining.toLocaleString()}</td>
+          <td class="ns-eta-cell">${rec.timeToExhaust ? escHtml(rec.timeToExhaust) : '<span style="color:var(--text-subtle)">\u2014</span>'}</td>
+          <td><span class="ns-badge ns-badge-${rec.severity}">${rec.severity[0].toUpperCase() + rec.severity.slice(1)}</span></td>
+          <td class="ns-co-cell">${co}</td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table class="ns-health-table">
+        <thead>
+          <tr>
+            <th>Code / Name</th>
+            <th>Type</th>
+            <th title="Current \u2192 Recommended for selected tier">Pre-Alloc</th>
+            <th>Consumed</th>
+            <th>Remaining</th>
+            <th title="Estimated exhaustion at selected volume tier">ETA @ tier</th>
+            <th>Health</th>
+            <th>Company</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>`;
+
+    let openOrigIdx = null;
+    wrap.querySelectorAll('.ns-data-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const origIdx = parseInt(row.dataset.origIdx, 10);
+        wrap.querySelector('.ns-drilldown-row')?.remove();
+        wrap.querySelectorAll('.ns-data-row').forEach(r => r.classList.remove('ns-row-selected'));
+
+        if (openOrigIdx === origIdx) { openOrigIdx = null; return; }
+        openOrigIdx = origIdx;
+        row.classList.add('ns-row-selected');
+
+        const { seq, rec } = analyzed[origIdx];
+        const dd = document.createElement('tr');
+        dd.className = 'ns-drilldown-row';
+        dd.innerHTML = `<td colspan="8">${buildNsDrilldownHTML(seq, rec)}</td>`;
+        row.insertAdjacentElement('afterend', dd);
+        dd.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    });
+  }
+
+  // Initial render — show all
+  renderNsTable(analyzed);
+}
+
+function buildNsDrilldownHTML(seq, rec) {
+  const code    = seq.NumberSequenceCode || '\u2014';
+  const name    = seq.Name || seq.Txt || '';
+  const lowest  = parseFloat(seq.Lowest)  || 0;
+  const highest = parseFloat(seq.Highest) || 0;
+  const next    = parseFloat(seq.Next != null ? seq.Next : lowest);
+
+  const fields = [
+    ['Code',              code],
+    ['Description',       name || '\u2014'],
+    ['Type',              rec.continuous ? 'Continuous' : 'Non-Continuous'],
+    ['Preallocation On',  seq.PreAllocationEnabled == null ? 'Unknown' : (seq.PreAllocationEnabled === true || seq.PreAllocationEnabled === 1 || String(seq.PreAllocationEnabled).toLowerCase() === 'yes') ? 'Yes' : 'No'],
+    ['Status',            String(seq.Status ?? 'Active')],
+    ['Scope',             seq.ScopeType || '\u2014'],
+    ['Company',           seq.DataAreaId || '\u2014'],
+    ['Lowest',            lowest.toLocaleString()],
+    ['Highest',           highest.toLocaleString()],
+    ['Next',              next.toLocaleString()],
+    ['Current Pre-Alloc', String(rec.prealloc)],
+    ['Recommended',       String(rec.suggestedPrealloc)],
+    ['% Consumed',        (rec.consumed * 100).toFixed(2) + '%'],
+    ['Remaining',         rec.remaining.toLocaleString()],
+    ['ETA @ tier',        rec.timeToExhaust || '\u2014'],
+  ];
+
+  const issueHtml = rec.issues.length > 0
+    ? rec.issues.map(i => `<div class="ns-issue-item ns-issue-${rec.severity}"><span>&#9888;</span>${escHtml(i)}</div>`).join('')
+    : '<div class="ns-issue-item ns-issue-ok"><span>&#10003;</span>No issues detected for this volume tier.</div>';
+
+  const suggHtml = rec.suggestions.length > 0
+    ? `<div class="ns-drilldown-section-title" style="margin-top:10px">Recommendations</div>` +
+      rec.suggestions.map(s => `<div class="ns-issue-item ns-suggestion"><span>&#9654;</span>${escHtml(s)}</div>`).join('')
+    : '';
+
+  return `
+    <div class="ns-drilldown-content">
+      <div class="ns-drilldown-header">
+        <span class="ns-drilldown-title">${escHtml(code)}${name ? ' \u2014 ' + escHtml(name) : ''}</span>
+        <span class="ns-badge ns-badge-${rec.severity}" style="font-size:11px;padding:3px 10px">${rec.severity.toUpperCase()}</span>
+      </div>
+      <div class="ns-drilldown-grid">
+        ${fields.map(([l, v]) => `
+          <div class="ns-drilldown-field">
+            <span class="ns-drilldown-field-label">${escHtml(l)}</span>
+            <span class="ns-drilldown-field-value">${escHtml(String(v))}</span>
+          </div>`).join('')}
+      </div>
+      <div class="ns-drilldown-section-title">Issues</div>
+      ${issueHtml}
+      ${suggHtml}
+    </div>`;
 }
 

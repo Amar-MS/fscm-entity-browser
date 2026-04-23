@@ -63,3 +63,38 @@ The gap between "I know what's needed" and "I can build it" has closed. The hard
 
 If you want to build your own version — fork this repo, open VS Code with GitHub Copilot, and start describing what you need.
 
+---
+
+## Version 1.2 — Number Sequence Health Analyzer
+
+### Where the idea came from
+
+In almost every D365 F&SCM implementation I have worked on, number sequences are set up once during go-live and never revisited. The default configuration often has no preallocation — or preallocation that was never tuned to the actual volume the system ended up handling. The result is silent performance drag that nobody connects to number sequences because it doesn't produce an obvious error.
+
+I wanted a way to look at all number sequences in one place, immediately see which ones were likely causing problems, and get a concrete recommendation — not a vague "you should look at this."
+
+### What I asked for
+
+I described the idea to Copilot as: a tool inside the entity browser that shows all number sequences, flags any that have no preallocation or have the wrong configuration, and lets the user pick a volume tier — low, medium, high, very high — to get a recommendation matched to how busy their system actually is. I also wanted to be able to click into any sequence to see the detail and understand the specific issue.
+
+### How it came together
+
+The conversation covered three areas — what the data looked like in D365, what "good" and "bad" configuration meant in practice, and how to present it clearly without requiring the user to understand the underlying mechanics.
+
+The volume tier idea came from a real consulting scenario: the right preallocation for a system processing 1,000 sales orders a month is completely different from one processing 1,000,000. Rather than showing a single recommendation, the tool lets the user set the context and then recalculates everything instantly.
+
+The harder part was that D365 does not expose number sequence configuration through a standard, consistently-named OData entity. Different environments use different entity names. The tool handles this by trying a list of known candidates and falling back to scanning the environment's own entity list — so it works even in environments with non-standard configurations.
+
+### What it does
+
+- Scans all number sequences in the environment across all companies
+- Flags sequences with no preallocation, continuous sequences that are not optimised, and sequences that are running close to exhaustion
+- Shows a progress bar for how much of each sequence's number range has been used, and estimates how long it will last at the selected volume
+- Lets you filter by severity, company, or search by code
+- Click any row to expand a full detail view with the specific issue and a plain-language recommendation
+
+### What I handled
+
+Knowing what good number sequence configuration looks like, describing the business scenarios that cause problems, testing the tool against a real environment, and identifying when the data being shown was wrong or incomplete.
+
+

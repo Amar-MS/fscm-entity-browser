@@ -1384,3 +1384,164 @@ html, body { height: 100%; overflow: hidden; font-family: var(--font); font-size
 .template-opt-btn + .template-opt-btn { border-top: 1px solid var(--border); }
 .template-opt-btn:hover { background: var(--surface); color: var(--primary); }
 
+/* ═══════════════════════════════════════════════════════════
+   Number Sequence Health Analyzer
+   ═══════════════════════════════════════════════════════════ */
+
+.ns-analyzer-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+/* ── Header ── */
+.ns-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.ns-header-info  { flex: 1; min-width: 0; }
+.ns-header-title { font-size: 15px; font-weight: 700; display: block; color: var(--text); }
+.ns-header-sub   { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
+
+/* ── Volume tier picker ── */
+.ns-tier-section {
+  padding: 10px 16px 9px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.ns-tier-label {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+}
+.ns-tier-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+.ns-tier-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 18px;
+  border: 2px solid var(--border-strong); border-radius: 20px;
+  background: var(--bg); color: var(--text-muted);
+  font-family: var(--font); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .12s;
+}
+.ns-tier-btn:hover  { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.ns-tier-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; }
+.ns-tier-desc       { font-size: 10px; font-weight: 400; opacity: .8; }
+.ns-tier-btn.active .ns-tier-desc { opacity: .85; }
+.ns-tier-hint       { font-size: 11px; color: var(--text-subtle); margin-top: 7px; }
+
+/* ── Scan summary bar ── */
+.ns-scan-summary {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0; min-height: 36px;
+}
+.ns-scan-count { font-size: 12px; color: var(--text-muted); margin-right: 4px; }
+.ns-summary-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+}
+.ns-summary-chip.critical { background: #fde7e9; color: #c50f1f; border: 1px solid #f4abba; }
+.ns-summary-chip.warning  { background: #fff4ce; color: #7a5900; border: 1px solid #f1c980; }
+.ns-summary-chip.caution  { background: #fef9e0; color: #6b4b00; border: 1px solid #e8d88a; }
+.ns-summary-chip.ok       { background: #e6f4ea; color: #256f3a; border: 1px solid #93d8a7; }
+
+/* ── NS filter bar ── */
+.ns-filter-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.ns-search-input {
+  flex: 1; min-width: 160px; height: 28px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 0 10px; font-size: 12px; font-family: var(--font); outline: none;
+}
+.ns-search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.ns-filter-select {
+  height: 28px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 0 6px; font-size: 12px; font-family: var(--font);
+  background: var(--bg); color: var(--text); outline: none; cursor: pointer;
+}
+.ns-filter-select:focus { border-color: var(--primary); }
+.ns-filter-count { font-size: 11px; color: var(--text-subtle); white-space: nowrap; margin-left: 4px; }
+
+/* ── NS table wrap scrollable ── */
+.ns-table-wrap { flex: 1; overflow: auto; }
+
+/* ── NS analyzer layout fix ── */
+.ns-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── NS filter bar ── */
+
+/* ── Health table ── */
+.ns-health-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.ns-health-table th {
+  position: sticky; top: 0; z-index: 2;
+  padding: 8px 12px; background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  text-align: left; font-size: 11px; font-weight: 700; color: var(--text-muted);
+}
+.ns-health-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+
+/* Row severity colouring */
+.ns-data-row               { cursor: pointer; }
+.ns-data-row:hover td      { filter: brightness(0.97); }
+.ns-row-critical td              { background: #fff0f1; }
+.ns-row-critical td:first-child  { border-left: 4px solid #c50f1f; }
+.ns-row-warning  td              { background: #fff9ee; }
+.ns-row-warning  td:first-child  { border-left: 4px solid #d16b00; }
+.ns-row-caution  td              { background: #fffde7; }
+.ns-row-caution  td:first-child  { border-left: 4px solid #b8a000; }
+.ns-row-ok       td              { background: var(--bg); }
+.ns-row-ok       td:first-child  { border-left: 4px solid #388a34; }
+.ns-row-selected td              { outline: 2px solid var(--primary); outline-offset: -1px; }
+
+/* ── Severity badge ── */
+.ns-badge          { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+.ns-badge-critical { background: #fde7e9; color: #c50f1f; }
+.ns-badge-warning  { background: #fff4ce; color: #7a5900; }
+.ns-badge-caution  { background: #fef9e0; color: #6b4b00; }
+.ns-badge-ok       { background: #e6f4ea; color: #256f3a; }
+
+/* ── Column helpers ── */
+.ns-code-name      { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.ns-type-noncont   { font-size: 11px; color: var(--text-subtle); }
+.ns-prealloc-cell  { text-align: center; }
+.ns-prealloc-arrow { font-size: 10px; color: var(--primary); margin-left: 5px; font-weight: 700; }
+.ns-prealloc-ok    { font-size: 11px; color: #388a34; margin-left: 5px; }
+.ns-num-cell       { font-size: 11px; color: var(--text-muted); text-align: right; }
+.ns-eta-cell       { font-size: 11px; }
+.ns-co-cell        { font-size: 11px; color: var(--text-muted); }
+
+/* ── Progress bar ── */
+.ns-progress-wrap         { display: flex; align-items: center; gap: 6px; }
+.ns-progress-bar          { width: 72px; height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.ns-progress-fill         { height: 100%; border-radius: 4px; }
+.ns-progress-fill.ok      { background: #388a34; }
+.ns-progress-fill.caution { background: #b8a000; }
+.ns-progress-fill.warning { background: #d16b00; }
+.ns-progress-fill.critical{ background: #c50f1f; }
+.ns-pct-label             { font-size: 11px; min-width: 36px; }
+
+/* ── Inline drilldown ── */
+.ns-drilldown-row > td    { padding: 0 !important; background: #f0f6fc !important; border-bottom: 2px solid var(--primary) !important; }
+.ns-drilldown-content     { padding: 16px 20px; }
+.ns-drilldown-header      { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.ns-drilldown-title       { font-size: 13px; font-weight: 700; flex: 1; font-family: var(--font-mono); color: var(--text); }
+.ns-drilldown-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 8px 16px; margin-bottom: 12px;
+}
+.ns-drilldown-field       { display: flex; flex-direction: column; gap: 2px; }
+.ns-drilldown-field-label { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: 0.5px; }
+.ns-drilldown-field-value { font-size: 12px; font-weight: 600; font-family: var(--font-mono); color: var(--text); }
+.ns-drilldown-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px;
+}
+.ns-issue-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 10px; border-radius: var(--radius);
+  font-size: 12px; margin-bottom: 5px; line-height: 1.4;
+}
+.ns-issue-critical { background: #fde7e9; color: #c50f1f; }
+.ns-issue-warning  { background: #fff4ce; color: #7a5900; }
+.ns-issue-caution  { background: #fef9e0; color: #6b4b00; }
+.ns-issue-ok       { background: #e6f4ea; color: #256f3a; }
+.ns-suggestion     { background: #dff6dd; color: #107c10; }
+

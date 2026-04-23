@@ -18,6 +18,7 @@ A Microsoft Edge browser extension for browsing, inspecting, and querying data e
 | **Excel template download** | Download an import-ready `.xls` template with mandatory fields first and a field reference sheet |
 | **CSV export** | Export current query results to CSV |
 | **Metadata cache** | Schema cached for 7 days, entity list for 24 hours — fast after first load |
+| **Number Sequence Health Analyzer** | Scan all number sequences for missing or suboptimal preallocation, exhaustion risk, and volume-tier recommendations — with per-sequence drilldown |
 
 ---
 
@@ -66,6 +67,7 @@ The extension injects a lightweight content script into your already-authenticat
 - **Mandatory fields are highlighted** in the Excel template — hand it straight to a consultant for data migration
 - If the entity list looks stale, click the **refresh icon** (↻) in the top bar to reload from the API
 - To clear all filters at once, click the red **✕ Clear filters** button in the data status bar
+- Click **⚡ NS** in the top bar to open the Number Sequence Health Analyzer — select your volume tier (Low / Medium / High / Very High) to get preallocation recommendations tuned to your system load
 
 ---
 
