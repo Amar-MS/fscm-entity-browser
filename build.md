@@ -83,7 +83,7 @@ The conversation covered three areas — what the data looked like in D365, what
 
 The volume tier idea came from a real consulting scenario: the right preallocation for a system processing 1,000 sales orders a month is completely different from one processing 1,000,000. Rather than showing a single recommendation, the tool lets the user set the context and then recalculates everything instantly.
 
-The harder part was that D365 does not expose number sequence configuration through a standard, consistently-named OData entity. Different environments use different entity names. The tool handles this by trying a list of known candidates and falling back to scanning the environment's own entity list — so it works even in environments with non-standard configurations.
+D365 exposes number sequence configuration through the `SequenceV2Tables` OData entity. The tool calls this directly and falls back to scanning the environment's own entity list only as a safety net for non-standard environments.
 
 ### What it does
 
